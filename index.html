@@ -58,6 +58,27 @@
       font-size: 1rem;
     }
 
+    .how-it-works {
+      padding: 2.5rem 1.25rem;
+      text-align: center;
+    }
+
+    .toggle {
+      cursor: pointer;
+      background: none;
+      border: 1px solid var(--accent);
+      color: var(--accent);
+      border-radius: 0.5rem;
+      padding: 0.6rem 1.2rem;
+      font-size: 1rem;
+    }
+
+    .details {
+      max-width: 40rem;
+      margin: 1rem auto 0;
+      font-size: 1rem;
+    }
+
     footer {
       padding: 1.5rem 1.25rem;
       text-align: center;
@@ -111,10 +132,34 @@
         less time on busywork and more time on what matters.
       </p>
     </section>
+
+    <section class="how-it-works" id="how-it-works">
+      <button class="toggle" id="how-it-works-toggle" aria-expanded="false" aria-controls="how-it-works-details">
+        How it works ▾
+      </button>
+      <div class="details" id="how-it-works-details" hidden>
+        <p>
+          Each agent is scoped to one job — reading files, browsing the web,
+          writing code — and a coordinating layer routes tasks to whichever
+          agent fits, then merges their results back into one workflow.
+        </p>
+      </div>
+    </section>
   </main>
 
   <footer>
     <p>&copy; 2026 Tommy Hoskins. Agent Ecosystem project.</p>
   </footer>
+
+  <script>
+    const toggle = document.getElementById('how-it-works-toggle');
+    const details = document.getElementById('how-it-works-details');
+
+    toggle.addEventListener('click', () => {
+      const isHidden = details.hasAttribute('hidden');
+      details.hidden = !isHidden;
+      toggle.setAttribute('aria-expanded', String(isHidden));
+    });
+  </script>
 </body>
 </html>
