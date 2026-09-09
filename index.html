@@ -2,14 +2,119 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Agent Ecosystem</title>
+  <style>
+    :root {
+      --bg: #0f1115;
+      --bg-alt: #161922;
+      --text: #e8eaed;
+      --text-muted: #a3a9b5;
+      --accent: #6ee7b7;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+    }
+
+    .hero {
+      padding: 3rem 1.25rem;
+      text-align: center;
+    }
+
+    .hero h1 {
+      margin: 0 0 0.5rem;
+      font-size: 2rem;
+    }
+
+    .hero p {
+      margin: 0;
+      color: var(--text-muted);
+      font-size: 1.05rem;
+    }
+
+    .about {
+      padding: 2.5rem 1.25rem;
+      background: var(--bg-alt);
+    }
+
+    .about h2 {
+      margin-top: 0;
+      color: var(--accent);
+      font-size: 1.4rem;
+    }
+
+    .about p {
+      max-width: 40rem;
+      margin: 0 auto;
+      font-size: 1rem;
+    }
+
+    footer {
+      padding: 1.5rem 1.25rem;
+      text-align: center;
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+
+    @media (min-width: 768px) {
+      .hero {
+        padding: 5rem 1.5rem;
+      }
+
+      .hero h1 {
+        font-size: 3rem;
+      }
+
+      .hero p {
+        font-size: 1.25rem;
+      }
+
+      .about {
+        padding: 4rem 1.5rem;
+      }
+
+      .about h2 {
+        font-size: 1.75rem;
+        text-align: center;
+      }
+
+      .about p {
+        font-size: 1.1rem;
+        text-align: center;
+      }
+    }
+  </style>
 </head>
 <body>
-  <h1>Agent Ecosystem</h1>
-  <p>
-    This is a personal ecosystem of AI agents that do real work for me —
-    handling tasks, automating workflows, and collaborating with each other
-    so I can spend less time on busywork and more time on what matters.
-  </p>
+  <header class="hero">
+    <h1>Agent Ecosystem</h1>
+    <p>A personal network of AI agents that handle real work, together.</p>
+  </header>
+
+  <main>
+    <section class="about" id="about">
+      <h2>About</h2>
+      <p>
+        Agent Ecosystem is a personal network of AI agents that do real work —
+        handling tasks, automating workflows, and collaborating with each other.
+        Instead of one assistant doing everything, specialized agents focus on
+        what they're best at and hand off work between them, so I can spend
+        less time on busywork and more time on what matters.
+      </p>
+    </section>
+  </main>
+
+  <footer>
+    <p>&copy; 2026 Tommy Hoskins. Agent Ecosystem project.</p>
+  </footer>
 </body>
 </html>
