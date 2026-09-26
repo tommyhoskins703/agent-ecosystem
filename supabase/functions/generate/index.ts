@@ -1,16 +1,24 @@
 // Supabase Edge Function: generate
 //
-// Proxies short-form content generation requests to the Claude API.
+// Proxies short-form content generation requests to the Claude API, then
+// records each successful generation in the "generations" table.
 // Keeps the Anthropic API key server-side (as a Supabase secret) so it
 // is never exposed to the browser.
 //
 // Deploy: supabase functions deploy generate
 // Secret: supabase secrets set ANTHROPIC_API_KEY=sk-ant-...
+//
+// SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are injected by the edge
+// runtime. The service role key bypasses RLS, so the insert below needs no
+// policy on "generations" - and it must never leave this function.
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { createClient } from "jsr:@supabase/supabase-js@2";
 
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
 const ANTHROPIC_MODEL = "claude-sonnet-5";
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -84,7 +92,7 @@ extra commentary:
     },
     body: JSON.stringify({
       model: ANTHROPIC_MODEL,
-      max_tokens: 500,
+      max_tokens: 16000,
       messages: [{ role: "user", content: prompt }],
     }),
   });
@@ -98,19 +106,59 @@ extra commentary:
   }
 
   const data = await anthropicRes.json();
-  const text = data.content?.[0]?.text ?? "";
+  // Find the text block by type: with adaptive thinking on, content[0] is a
+  // "thinking" block that has no .text field, so positional indexing misses
+  // the real payload and JSON.parse() gets an empty string.
+  const text = data.content?.find((b: { type: string }) => b.type === "text")?.text ?? "";
 
   let parsed: { hook?: string; script?: string };
   try {
     parsed = JSON.parse(text);
   } catch {
-    return new Response(JSON.stringify({ error: "Model did not return valid JSON", raw: text }), {
-      status: 502,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({
+        error: "Model did not return valid JSON",
+        raw: text,
+        blocks: data.content?.map((b: { type: string }) => b.type),
+      }),
+      { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
   }
 
-  return new Response(JSON.stringify(parsed), {
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
+  // Record the generation before returning it. A failure here is logged but
+  // not fatal: the caller still gets the hook and script they already paid an
+  // API call for, with "saved": false so the UI can tell history wasn't written.
+  let savedId: string | number | null = null;
+  let saveError: string | null = null;
+
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+    saveError = "Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY";
+  } else {
+    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    const { data: row, error } = await supabase
+      .from("generations")
+      .insert({
+        topic: topic.trim(),
+        angle: angle.trim(),
+        hook: parsed.hook ?? null,
+        script: parsed.script ?? null,
+      })
+      .select("id")
+      .single();
+
+    if (error) {
+      saveError = error.message;
+    } else {
+      savedId = row?.id ?? null;
+    }
+  }
+
+  if (saveError) {
+    console.error("Failed to save generation:", saveError);
+  }
+
+  return new Response(
+    JSON.stringify({ ...parsed, id: savedId, saved: saveError === null }),
+    { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+  );
 });
