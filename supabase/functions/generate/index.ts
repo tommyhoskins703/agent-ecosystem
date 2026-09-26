@@ -65,6 +65,21 @@ Deno.serve(async (req) => {
     });
   }
 
+  // Cap input length. This endpoint is reachable by anyone holding the anon
+  // key, which is public in index.html, so unbounded input means unbounded
+  // Anthropic spend per call.
+  const TOPIC_MAX = 500;
+  const ANGLE_MAX = 1000;
+
+  if (topic.length > TOPIC_MAX || angle.length > ANGLE_MAX) {
+    return new Response(
+      JSON.stringify({
+        error: `"topic" must be ${TOPIC_MAX} characters or fewer, "angle" ${ANGLE_MAX} or fewer`,
+      }),
+      { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
+  }
+
   const prompt = `You write short-form video scripts (for TikTok/Reels/Shorts) that help local
 service businesses (plumbers, HVAC, landscapers, salons, etc.) turn AI news into
 relatable, useful content for their customers.
