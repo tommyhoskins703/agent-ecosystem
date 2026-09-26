@@ -140,6 +140,94 @@
       white-space: pre-wrap;
     }
 
+    .auth {
+      padding: 2.5rem 1.25rem;
+    }
+
+    .auth h2 {
+      margin-top: 0;
+      color: var(--accent);
+      font-size: 1.4rem;
+      text-align: center;
+    }
+
+    .auth-form {
+      max-width: 22rem;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    .auth-form label {
+      display: block;
+      margin-bottom: 0.4rem;
+      font-size: 0.95rem;
+      color: var(--text-muted);
+    }
+
+    .auth-form input {
+      width: 100%;
+      padding: 0.6rem 0.75rem;
+      font-size: 1rem;
+      font-family: inherit;
+      background: var(--bg-alt);
+      color: var(--text);
+      border: 1px solid #2a2f3a;
+      border-radius: 0.5rem;
+    }
+
+    .auth-buttons {
+      display: flex;
+      gap: 0.75rem;
+      justify-content: center;
+      margin-top: 0.25rem;
+    }
+
+    .auth-buttons button {
+      cursor: pointer;
+      border-radius: 0.5rem;
+      padding: 0.6rem 1.2rem;
+      font-size: 1rem;
+      font-family: inherit;
+    }
+
+    .auth-primary {
+      background: var(--accent);
+      color: #0f1115;
+      font-weight: 600;
+      border: none;
+    }
+
+    .auth-secondary {
+      background: none;
+      color: var(--accent);
+      border: 1px solid var(--accent);
+    }
+
+    .auth-message {
+      max-width: 22rem;
+      margin: 1rem auto 0;
+      text-align: center;
+      font-size: 0.9rem;
+      color: var(--text-muted);
+    }
+
+    .auth-signed-in {
+      max-width: 22rem;
+      margin: 0 auto;
+      text-align: center;
+    }
+
+    .auth-email {
+      margin: 0 0 0.75rem;
+      font-size: 1rem;
+    }
+
+    .auth-email strong {
+      color: var(--accent);
+    }
+
     .history {
       padding: 2.5rem 1.25rem;
     }
@@ -260,6 +348,32 @@
         </p>
       </div>
     </section>
+    <section class="auth" id="auth">
+      <h2>Account</h2>
+
+      <form class="auth-form" id="auth-form" hidden>
+        <div>
+          <label for="auth-email">Email</label>
+          <input type="email" id="auth-email" name="email" autocomplete="email" required>
+        </div>
+        <div>
+          <label for="auth-password">Password</label>
+          <input type="password" id="auth-password" name="password" autocomplete="current-password" minlength="6" required>
+        </div>
+        <div class="auth-buttons">
+          <button type="submit" class="auth-primary" id="auth-login">Log in</button>
+          <button type="button" class="auth-secondary" id="auth-signup">Sign up</button>
+        </div>
+      </form>
+
+      <div class="auth-signed-in" id="auth-signed-in" hidden>
+        <p class="auth-email">Logged in as <strong id="auth-current-email"></strong></p>
+        <button type="button" class="auth-secondary" id="auth-logout">Log out</button>
+      </div>
+
+      <p class="auth-message" id="auth-message">Checking your session…</p>
+    </section>
+
     <section class="generator" id="generator">
       <h2>Content Generator</h2>
       <form class="generator-form" id="generator-form">
@@ -287,6 +401,7 @@
     <p>&copy; 2026 Tommy Hoskins. Agent Ecosystem project.</p>
   </footer>
 
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.js"></script>
   <script>
     const toggle = document.getElementById('how-it-works-toggle');
     const details = document.getElementById('how-it-works-details');
@@ -298,10 +413,11 @@
     });
 
     // Fill these in after creating your Supabase project (see supabase/functions/).
-    const SUPABASE_FUNCTIONS_BASE = 'https://oqxcwzflcycdnitkubkf.supabase.co/functions/v1';
+    const SUPABASE_URL = 'https://oqxcwzflcycdnitkubkf.supabase.co';
+    const SUPABASE_ANON_KEY = 'sb_publishable_I8WFnZ_qkVTJ0UnxbvVysg_u5v2WfvP';
+    const SUPABASE_FUNCTIONS_BASE = `${SUPABASE_URL}/functions/v1`;
     const GENERATE_URL = `${SUPABASE_FUNCTIONS_BASE}/generate`;
     const HISTORY_URL = `${SUPABASE_FUNCTIONS_BASE}/history`;
-    const SUPABASE_ANON_KEY = 'sb_publishable_I8WFnZ_qkVTJ0UnxbvVysg_u5v2WfvP';
 
     const generatorForm = document.getElementById('generator-form');
     const generatorOutput = document.getElementById('generator-output');
@@ -407,6 +523,125 @@
     }
 
     loadHistory();
+
+    // --- Auth -------------------------------------------------------------
+    // The UMD bundle exposes the library as the global `supabase`, so the
+    // client instance has to be called something else or it shadows it.
+    const sbClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    const authForm = document.getElementById('auth-form');
+    const authSignedIn = document.getElementById('auth-signed-in');
+    const authCurrentEmail = document.getElementById('auth-current-email');
+    const authMessage = document.getElementById('auth-message');
+    const authEmailInput = document.getElementById('auth-email');
+    const authPasswordInput = document.getElementById('auth-password');
+    const authLoginButton = document.getElementById('auth-login');
+    const authSignupButton = document.getElementById('auth-signup');
+    const authLogoutButton = document.getElementById('auth-logout');
+
+    function setAuthMessage(text) {
+      authMessage.textContent = text;
+      authMessage.hidden = !text;
+    }
+
+    function setAuthBusy(busy) {
+      authLoginButton.disabled = busy;
+      authSignupButton.disabled = busy;
+      authLogoutButton.disabled = busy;
+    }
+
+    // Driven by the real session rather than by whichever button was clicked,
+    // so returning from a confirmation link lands in the right state too.
+    function renderAuth(session) {
+      const email = session?.user?.email ?? null;
+
+      if (email) {
+        authForm.hidden = true;
+        authSignedIn.hidden = false;
+        authCurrentEmail.textContent = email;
+      } else {
+        authForm.hidden = false;
+        authSignedIn.hidden = true;
+        authCurrentEmail.textContent = '';
+      }
+    }
+
+    function readCredentials() {
+      return {
+        email: authEmailInput.value.trim(),
+        password: authPasswordInput.value,
+      };
+    }
+
+    authForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const { email, password } = readCredentials();
+
+      setAuthBusy(true);
+      setAuthMessage('Logging in…');
+
+      const { error } = await sbClient.auth.signInWithPassword({ email, password });
+
+      if (error) {
+        setAuthMessage(error.message);
+      } else {
+        authForm.reset();
+        setAuthMessage('');
+      }
+
+      setAuthBusy(false);
+    });
+
+    authSignupButton.addEventListener('click', async () => {
+      const { email, password } = readCredentials();
+
+      if (!authForm.reportValidity()) {
+        return;
+      }
+
+      setAuthBusy(true);
+      setAuthMessage('Creating your account…');
+
+      const { data, error } = await sbClient.auth.signUp({
+        email,
+        password,
+        options: { emailRedirectTo: `${window.location.origin}${window.location.pathname}` },
+      });
+
+      if (error) {
+        setAuthMessage(error.message);
+      } else if (!data.session) {
+        // Email confirmation is required on this project, so sign-up does not
+        // produce a session - the user has to click the link in their email.
+        authForm.reset();
+        setAuthMessage(`Account created. Check ${email} for a confirmation link, then log in.`);
+      } else {
+        authForm.reset();
+        setAuthMessage('');
+      }
+
+      setAuthBusy(false);
+    });
+
+    authLogoutButton.addEventListener('click', async () => {
+      setAuthBusy(true);
+      const { error } = await sbClient.auth.signOut();
+      setAuthMessage(error ? error.message : '');
+      setAuthBusy(false);
+    });
+
+    sbClient.auth.onAuthStateChange((_event, session) => {
+      renderAuth(session);
+    });
+
+    sbClient.auth.getSession().then(({ data, error }) => {
+      if (error) {
+        setAuthMessage(`Couldn't check your session: ${error.message}`);
+      } else {
+        setAuthMessage('');
+      }
+      renderAuth(data?.session ?? null);
+    });
   </script>
 </body>
 </html>
