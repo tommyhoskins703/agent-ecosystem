@@ -1,53 +1,67 @@
 # Agent Ecosystem
 
-A landing page for the Agent Ecosystem project — a personal network of AI agents that do real work: handling tasks, automating workflows, and collaborating with each other so less time goes to busywork.
+A landing page for the Agent Ecosystem project — a personal network of AI
+agents that do real work: handling tasks, automating workflows, and
+collaborating with each other so less time goes to busywork.
+
+The page also hosts a working tool: a short-form content generator that turns
+AI news into video scripts for local service businesses, backed by the Claude
+API, with every generation saved and listed on the page.
 
 ## Built with
 
 - HTML5 (semantic elements: `header`, `main`, `section`, `footer`)
 - CSS, written mobile-first with a single `min-width` breakpoint for larger screens
-- Vanilla JavaScript (no libraries or frameworks) for the expandable "How it works" section
+- Vanilla JavaScript (no libraries or frameworks) for the expandable "How it
+  works" section, the content generator, and the history list
+- Two Supabase Edge Functions (Deno/TypeScript) and one Postgres table
 
-Everything lives in a single file, [`index.html`](index.html) — no build step, package manager, or dependencies.
+The whole front end lives in a single file, [`index.html`](index.html) — no
+build step, package manager, or dependencies.
 
 ## Deployment
 
-The site is static and deployed via GitHub Pages, serving `index.html` directly from the `main` branch. Pushing to `main` updates the live site.
+The site is static and deployed via GitHub Pages, serving `index.html`
+directly from the `main` branch. Pushing to `main` updates the live site.
+
+The Edge Functions deploy separately and are **not** updated by a push — they
+ship with `supabase functions deploy` (see Setup below).
 
 ## Content Generator
 
-The "Generate" button on the landing page calls a Supabase Edge Function
-([`supabase/functions/generate/index.ts`](supabase/functions/generate/index.ts))
-that proxies to the Claude API to produce a short-form hook + script from the
-"AI news/topic" and "Angle for local service businesses" fields. The Anthropic
-API key lives only on the Supabase side as a secret — it's never shipped to
-the browser.
+The "Generate" button calls the `generate` Edge Function
+([`supabase/functions/generate/index.ts`](supabase/functions/generate/index.ts)),
+which prompts the Claude API for a hook and a 30–45 second script from the
+"AI news/topic" and "Angle for local service businesses" fields, saves the
+result, and returns it.
 
-### Setup
+The function asks Claude for a bare JSON object and locates the reply's text
+block **by type** rather than by position — with adaptive thinking enabled by
+default, the first content block is a `thinking` block carrying no text, so
+indexing `content[0]` yields an empty string. On a parse failure the response
+includes the raw text and the content-block types, which is usually enough to
+tell a malformed reply from an empty one.
 
-1. Create a Supabase project at [supabase.com](https://supabase.com) (or use an existing one).
-2. Install the [Supabase CLI](https://supabase.com/docs/guides/cli) and log in:
-   ```bash
-   supabase login
-   supabase link --project-ref YOUR-PROJECT-REF
-   ```
-3. Set your Anthropic API key as a secret:
-   ```bash
-   supabase secrets set ANTHROPIC_API_KEY=sk-ant-...
-   ```
-4. Deploy the function:
-   ```bash
-   supabase functions deploy generate
-   ```
-5. In `index.html`, set `SUPABASE_FUNCTION_URL` to
-   `https://YOUR-PROJECT-REF.supabase.co/functions/v1/generate` and
-   `SUPABASE_ANON_KEY` to your project's anon/public key (Project Settings →
-   API in the Supabase dashboard).
+## History
 
-### Saved generations
+The `history` Edge Function
+([`supabase/functions/history/index.ts`](supabase/functions/history/index.ts))
+returns every saved generation — `id`, `topic`, `angle`, `hook`, `script`,
+`created_at` — newest first. It is GET-only and returns 405 for anything else.
+
+The page's History section loads it on page load and again after each
+successful generate. List items are built with `createElement` and
+`textContent` rather than `innerHTML`: the topic is typed by a user and the
+hook is written by a model, so rendering either as markup would be an
+injection hole on a public page.
+
+The function returns all rows with no limit, which is fine at this scale and
+would want pagination if the table grew large.
+
+## Database
 
 Every successful generation is written to a `generations` table before the
-function responds, so there's a history of what was produced:
+function responds:
 
 ```sql
 create table generations (
@@ -61,9 +75,77 @@ create table generations (
 );
 ```
 
-The function inserts with the `SUPABASE_SERVICE_ROLE_KEY` that the edge runtime
-provides, which bypasses row-level security — no insert policy is needed, and
-the browser never gets write access. The response includes the new row's `id`
-(for attaching `feedback` later) and `saved: false` if the insert failed; a
-failed insert is logged (`supabase functions logs generate`) but still returns
-the hook and script.
+The `generate` response includes the new row's `id` and `saved: true`. If the
+insert fails, the error is logged server-side and the response still carries
+the hook and script with `saved: false` — a failed write never costs you a
+generation you already paid an API call for.
+
+The `feedback` column is in place for attaching feedback to a generation by
+`id`; nothing writes to it yet.
+
+## Security
+
+- **Anthropic API key** is stored as a Supabase secret and read server-side
+  via `Deno.env.get`. It is never sent to the browser.
+- **Service-role key** is injected into the Edge Function runtime and used for
+  all database access. It never appears in `index.html`, in any response body,
+  or in the repository. Error messages name the missing *variable*, never its
+  value.
+- **Row-level security is enabled on `generations` with no policies**, so the
+  deny-by-default posture blocks the anon key entirely: a direct REST read
+  returns `[]`, an insert is rejected, and a delete matches no rows. Only the
+  service-role key — i.e. the Edge Functions — can reach the data.
+- **Input length limits** on `generate`: `topic` is capped at 500 characters
+  and `angle` at 1000, returning 400 above that. Both endpoints are reachable
+  by anyone holding the anon key, which is public in `index.html` by
+  necessity, so unbounded input would mean unbounded Claude API spend per
+  call.
+- The page's anon key is a **publishable** key. It identifies the project; it
+  is not a secret and grants no data access on its own given the RLS posture
+  above.
+
+Known gaps, accepted for a project at this scale: there is no per-caller rate
+limiting, so the length cap bounds cost per request but not requests per
+minute; and `history` exposes every saved generation to anyone with the anon
+key, which is intended here because the rows are displayed on a public page.
+
+## Setup
+
+1. Create a Supabase project at [supabase.com](https://supabase.com) (or use an existing one).
+2. Install the [Supabase CLI](https://supabase.com/docs/guides/cli) and log in:
+   ```bash
+   supabase login
+   supabase link --project-ref YOUR-PROJECT-REF
+   ```
+3. Create the `generations` table using the SQL above, and confirm row-level
+   security is enabled on it (Table Editor → the table → RLS toggle). Leave it
+   with no policies.
+4. Set your Anthropic API key as a secret:
+   ```bash
+   supabase secrets set ANTHROPIC_API_KEY=sk-ant-...
+   ```
+5. Deploy both functions:
+   ```bash
+   supabase functions deploy generate
+   supabase functions deploy history
+   ```
+6. In `index.html`, set `SUPABASE_FUNCTIONS_BASE` to
+   `https://YOUR-PROJECT-REF.supabase.co/functions/v1` and `SUPABASE_ANON_KEY`
+   to your project's anon/publishable key (Project Settings → API in the
+   Supabase dashboard). The `GENERATE_URL` and `HISTORY_URL` constants are
+   derived from the base, so the project ref is only written once.
+
+`SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are injected into the Edge
+Function runtime automatically — there is no secret to set for those.
+
+### Logs and troubleshooting
+
+Edge Function logs are in the Supabase dashboard under Edge Functions → the
+function → Logs. The CLI has no `functions logs` subcommand. Ad-hoc SQL
+against the linked project runs through:
+
+```bash
+supabase db query --linked 'select id, topic, created_at from generations order by id desc'
+```
+
+Without `--linked` that command targets a local database and requires Docker.
